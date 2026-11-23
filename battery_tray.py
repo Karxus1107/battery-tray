@@ -198,7 +198,11 @@ def main():
         # 截「開始」左邊整條工作列當背景快取；只在工作列/開始按鈕位置變動時重截，內容變動不會閃
         # ponytail: 換桌布或切深淺色後背景不會跟上，重開程式即可
         ax, h, _, tl, tt = state["geo"]
-        state.update(bg=ImageGrab.grab((tl, tt, tl + ax, tt + h)).convert("RGBA"), items=None)
+        strip = ImageGrab.grab((tl, tt, tl + ax, tt + h)).convert("RGBA")
+        # 「開始」之後右移時面板會超出截圖範圍：用最右一欄（空白工作列）拉長補到整條工作列寬
+        bg = strip.crop((ax - 1, 0, ax, h)).resize((rect(state["parent"])[2] - tl, h))
+        bg.paste(strip)
+        state.update(bg=bg, items=None)
 
     def draw(items):
         state["items"] = items
@@ -225,13 +229,17 @@ def main():
             if state["parent"] != tray:
                 u32.SetParent(hwnd, tray); state.update(parent=tray, geo=None)
             tl, tt, _, tb = rect(tray)
-            geo = (rect(start)[0] - tl, tb - tt, u32.GetDpiForWindow(tray), tl, tt)
-            if geo != state["geo"]:
-                state.update(geo=geo, bg=None)
+            ax, rest = rect(start)[0] - tl, (tb - tt, u32.GetDpiForWindow(tray), tl, tt)
+            if not state["geo"] or state["geo"][1:] != rest:  # 工作列本身變了才重截背景
+                state.update(geo=(ax, *rest), bg=None)
                 u32.ShowWindow(hwnd, 0)  # 先藏起來，才截得到乾淨的背景
                 root.after(200, capture)
-            elif state["bg"] and items != state["items"]:
-                draw(items)
+            else:
+                # 跟著「開始」移動但沿用快取背景：移動時重截會把舊面板/動畫截進去變殘影
+                if ax != state["geo"][0]:
+                    state.update(geo=(ax, *rest), items=None)
+                if state["bg"] and items != state["items"]:
+                    draw(items)
         root.after(200, tick)
 
     for name, reader, _ in DEVICES:
