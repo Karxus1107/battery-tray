@@ -193,16 +193,16 @@ def main():
     state = {"parent": None, "geo": None, "bg": None, "items": None}
 
     # Win11 工作列由 XAML 合成：逐像素 alpha（UpdateLayeredWindow）的子視窗不會被畫、頂層視窗又會被工作列蓋住，
-    # 所以用不透明子視窗，把面板合成在截下來的工作列背景上
+    # 所以用不透明子視窗，把面板合成在工作列底色上
     def capture():
-        # 截「開始」左邊整條工作列當背景快取；只在工作列/開始按鈕位置變動時重截，內容變動不會閃
-        # ponytail: 換桌布或切深淺色後背景不會跟上，重開程式即可
+        # 「開始」左邊整條工作列每一列取最常見的顏色，組成 1px 寬的底色欄（保留頂端邊線）。不直接貼截圖：
+        # XAML 工作列擦掉剛藏起來的面板有延遲，截圖常會帶到舊面板變殘影；取眾數則殘影比空白工作列窄就不影響
+        # ponytail: 換桌布或切深淺色後底色不會跟上，重開程式即可
         ax, h, _, tl, tt = state["geo"]
         strip = ImageGrab.grab((tl, tt, tl + ax, tt + h)).convert("RGBA")
-        # 「開始」之後右移時面板會超出截圖範圍：用最右一欄（空白工作列）拉長補到整條工作列寬
-        bg = strip.crop((ax - 1, 0, ax, h)).resize((rect(state["parent"])[2] - tl, h))
-        bg.paste(strip)
-        state.update(bg=bg, items=None)
+        col = Image.new("RGBA", (1, h))
+        col.putdata([max(strip.crop((0, y, ax, y + 1)).getcolors(ax))[1] for y in range(h)])
+        state.update(bg=col, items=None)
 
     def draw(items):
         state["items"] = items
@@ -212,7 +212,7 @@ def main():
         img = render(items, dpi / 96, h)
         # ponytail: 工作列圖示靠左對齊時「開始」在最左邊、放不下，要改錨點才行
         x = max(ax - img.width - 4, 0)
-        bg = state["bg"].crop((x, 0, x + img.width, h))
+        bg = state["bg"].resize(img.size, Image.NEAREST)
         bg.alpha_composite(img)
         panel.image = ImageTk.PhotoImage(bg)
         panel.config(image=panel.image)
